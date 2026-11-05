@@ -1,0 +1,73 @@
+name: demo
+on:
+  workflow_dispatch:
+    inputs:
+      demo_id:
+        description: demo_id (3-12 lowercase chars)
+        required: true
+      profile:
+        description: dataset profile
+        type: choice
+        options: [lite, full]
+        default: lite
+      action:
+        type: choice
+        options: [apply, seed, backup, run-incident, reset, destroy]
+        required: true
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      DEMO_ID: ${{ inputs.demo_id }}
+      TF_IN_AUTOMATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.10.5" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r scripts/requirements.txt
+      - name: Terraform init
+        run: |
+          terraform -chdir=envs/sandbox init -reconfigure -input=false \
+            -backend-config="bucket=${{ vars.STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.STATE_REGION }}" \
+            -backend-config="key=scenario-2/${DEMO_ID}.tfstate"
+      - name: Write tfvars
+        run: |
+          cat > "$RUNNER_TEMP/ci.tfvars" <<TFV
+          demo_id      = "${DEMO_ID}"
+          region       = "${{ vars.AWS_REGION }}"
+          state_bucket = "${{ vars.STATE_BUCKET }}"
+          state_region = "${{ vars.STATE_REGION }}"
+          owner        = "${{ github.actor }}"
+          expires_on   = "$(date -u -d '+7 days' +%F)"
+          TFV
+      - name: apply
+        if: inputs.action == 'apply'
+        run: |
+          terraform -chdir=envs/sandbox apply -auto-approve -var-file="$RUNNER_TEMP/ci.tfvars"
+          mkdir -p .state && terraform -chdir=envs/sandbox output -json > ".state/${DEMO_ID}.outputs.json"
+      - name: scripts
+        if: inputs.action != 'apply' && inputs.action != 'destroy'
+        run: |
+          mkdir -p .state && terraform -chdir=envs/sandbox output -json > ".state/${DEMO_ID}.outputs.json"
+          case "${{ inputs.action }}" in
+            seed)         python scripts/seed_dataset.py --demo-id "$DEMO_ID" --dataset-profile "${{ inputs.profile }}" ;;
+            backup)       python scripts/run_backup.py --demo-id "$DEMO_ID" ;;
+            run-incident) python scripts/simulate_incident.py --demo-id "$DEMO_ID" --confirm ;;
+            reset)        python scripts/reset_demo.py --demo-id "$DEMO_ID" --dataset-profile "${{ inputs.profile }}" --confirm ;;
+          esac
+      - name: destroy
+        if: inputs.action == 'destroy'
+        run: |
+          mkdir -p .state && terraform -chdir=envs/sandbox output -json > ".state/${DEMO_ID}.outputs.json"
+          python scripts/cleanup_recovery_points.py --demo-id "$DEMO_ID" --confirm
+          terraform -chdir=envs/sandbox destroy -auto-approve -var-file="$RUNNER_TEMP/ci.tfvars"

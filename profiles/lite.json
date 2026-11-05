@@ -1,0 +1,10 @@
+{
+  "name": "lite",
+  "seed": 20260101,
+  "datasets": {
+    "finance":   {"prefix": "finance/",   "kind": "finance",   "count": 5000,  "min_size": 4096,    "max_size": 262144},
+    "customers": {"prefix": "customers/", "kind": "customers", "count": 5000,  "min_size": 2048,    "max_size": 65536},
+    "app-logs":  {"prefix": "app-logs/",  "kind": "logs",      "count": 10000, "min_size": 1024,    "max_size": 16384},
+    "media":     {"prefix": "media/",     "kind": "media",     "count": 100,   "min_size": 1048576, "max_size": 10485760}
+  }
+}

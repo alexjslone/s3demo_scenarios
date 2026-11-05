@@ -1,0 +1,45 @@
+# Scenario 2 presenter runbook: S3 prefix recovery
+
+All commands: `.\demo.ps1 <cmd> -DemoId <id> [-AwsProfile <profile>]`.
+
+## Terminology
+The incident is a **simulated corruption**, not encryption. No keys or crypto are used: every object
+under `finance/` is replaced with nonsense bytes by remote S3 API calls and tagged
+`demo-status=corrupted`. Say "simulated corruption" to customers.
+
+## Prep
+| When | Steps |
+|---|---|
+| Day before | `up`, `seed -DatasetProfile full`, `backup`, finish Clumio UI setup + first Clumio backup |
+| Hours before | Full rehearsal incl. all three AWS Backup restore modes; `report` to record timings; `reset -Confirm` |
+| Live | See below |
+| After | `reset -Confirm` or `down -Confirm` |
+
+Recheck the AWS Backup S3 restore docs before every customer run: behavior changes.
+
+## Live flow
+1. Baseline: `verify -Label baseline` (PASS).
+2. Incident: `incident -Confirm` then `post` (legit post-incident `app-logs/` writes). Show `finance/` damaged,
+   `RANSOM_NOTE.txt` present, old versions purged.
+3. Clumio (UI): Global Search `RANSOM_NOTE.txt`, recover `finance/` only. Note UTC start/end.
+   `verify -Label clumio` -> `finance/` PASS and post-incident app-logs intact.
+4. AWS Backup in place: `restore -Mode in-place` completes but fixes nothing. Re-corrupt for the next steps
+   with `incident -Confirm` if Clumio already repaired the data (or run AWS options first, Clumio last).
+   `verify -Label aws-inplace` -> FAIL (still corrupted). This confirms restores are non-destructive.
+5. AWS Backup honest options (pre-recorded timings are fine):
+   * (b) `restore -Mode prefix -Prefix finance/` then `copyback -Source prefix -Confirm`, `verify -Label aws-prefix`.
+     Requires knowing the exact prefix (up to 5 keys/prefixes per job); there is no search.
+   * (c) `restore -Mode full` then `copyback -Source full -Confirm`, `verify -Label aws-full`.
+   * Variant: delete corrupted objects first, then restore in place (destroys evidence; manual).
+6. `report -ClumioStart <ISO> -ClumioEnd <ISO>` -> `results/<id>-results.md`.
+
+Order tip: recovery buckets must be empty for each `restore` of that mode; `reset -Confirm` empties them.
+
+## Accuracy guardrails (talk track)
+* AWS Backup protects the whole bucket (selection by bucket ARN/tag; no prefix filter). Do NOT claim it
+  "can only restore the whole bucket": item-level restore of up to 5 keys/prefixes exists.
+* No search or browse of backup contents.
+* Restores never overwrite existing objects; a current-version delete marker counts as absent.
+* Default restores the latest version per object; a restore parameter allows more versions.
+* Source and destination buckets need versioning; restores land in S3 Standard.
+* Every timing shown must come from this repo's measured results (date, region, object count, bytes).

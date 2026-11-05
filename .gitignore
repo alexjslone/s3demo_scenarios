@@ -1,0 +1,12 @@
+.terraform/
+*.tfstate*
+.terraform.lock.hcl.bak
+.venv/
+__pycache__/
+.state/
+results/*
+!results/.gitkeep
+manifests/*
+!manifests/.gitkeep
+envs/sandbox/tfvars/*.tfvars
+!envs/sandbox/tfvars/example.tfvars

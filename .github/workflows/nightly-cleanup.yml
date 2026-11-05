@@ -1,0 +1,54 @@
+name: nightly-cleanup
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch: {}
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    outputs:
+      expired: ${{ steps.f.outputs.expired }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - run: pip install boto3
+      - id: f
+        run: echo "expired=$(python scripts/expire_stacks.py --region '${{ vars.AWS_REGION }}')" >> "$GITHUB_OUTPUT"
+  destroy:
+    needs: find
+    if: needs.find.outputs.expired != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        demo_id: ${{ fromJson(needs.find.outputs.expired) }}
+    env:
+      DEMO_ID: ${{ matrix.demo_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.10.5" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r scripts/requirements.txt
+      - run: |
+          terraform -chdir=envs/sandbox init -reconfigure -input=false \
+            -backend-config="bucket=${{ vars.STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.STATE_REGION }}" \
+            -backend-config="key=scenario-2/${DEMO_ID}.tfstate"
+          mkdir -p .state && terraform -chdir=envs/sandbox output -json > ".state/${DEMO_ID}.outputs.json"
+          python scripts/cleanup_recovery_points.py --demo-id "$DEMO_ID" --confirm
+          terraform -chdir=envs/sandbox destroy -auto-approve \
+            -var demo_id="$DEMO_ID" -var region="${{ vars.AWS_REGION }}" \
+            -var state_bucket="${{ vars.STATE_BUCKET }}" -var state_region="${{ vars.STATE_REGION }}" \
+            -var owner=nightly -var expires_on=2000-01-01
