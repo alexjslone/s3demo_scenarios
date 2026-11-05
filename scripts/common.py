@@ -108,7 +108,7 @@ def load_outputs(demo_id: str) -> dict:
     cache = STATE_CACHE / f"{demo_id}.outputs.json"
     raw = None
     if cache.exists():
-        raw = json.loads(cache.read_text(encoding="utf-8"))
+        raw = json.loads(cache.read_text(encoding="utf-8-sig"))  # tolerate BOM from Windows PowerShell
     else:
         try:
             res = subprocess.run(

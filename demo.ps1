@@ -68,7 +68,8 @@ switch ($Command) {
     terraform "-chdir=$EnvDir" apply "-var-file=$TfVars" -input=false -auto-approve
     if ($LASTEXITCODE) { throw 'terraform apply failed' }
     New-Item -ItemType Directory -Force $StateDir | Out-Null
-    terraform "-chdir=$EnvDir" output -json | Out-File -Encoding utf8 (Join-Path $StateDir "$DemoId.outputs.json")
+    $outJson = (terraform "-chdir=$EnvDir" output -json) -join "`n"
+    [System.IO.File]::WriteAllText((Join-Path $StateDir "$DemoId.outputs.json"), $outJson, (New-Object System.Text.UTF8Encoding($false)))
     Run-Py 'check_vault_deletable.py' @()
   }
   'check'    { Run-Py 'check_vault_deletable.py' $(if ($Deep) { @('--deep') } else { @() }) }
