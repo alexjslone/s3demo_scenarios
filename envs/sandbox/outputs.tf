@@ -42,3 +42,7 @@ output "backup_role_arn" {
 output "backup_retention_days" {
   value = module.aws_backup.retention_days
 }
+
+output "backup_vault_name" {
+  value = module.aws_backup.vault_name
+}

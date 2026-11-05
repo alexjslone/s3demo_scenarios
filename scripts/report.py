@@ -58,6 +58,9 @@ def main() -> None:
         lines.append(f"- On-demand backup: {bk['state']} in {fmt_dur(bk['duration_s'])} (recorded {bk['end']})")
     if inc:
         lines.append(f"- Incident window: {inc['incident_start']} to {inc['incident_end']}")
+    bt = ctx.result_path("backup-timing.md")
+    if bt.exists():
+        lines.append(f"- First backup timing, AWS Backup vs Clumio: see {bt.relative_to(bt.parent.parent)}")
     lines.append("- Timings measured by this repo; re-measure for each customer run (conditions vary).")
     out = ctx.result_path("results.md")
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")

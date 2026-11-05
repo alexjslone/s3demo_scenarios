@@ -5,11 +5,14 @@
   .\demo.ps1 up      -DemoId jsmith01
   .\demo.ps1 seed    -DemoId jsmith01 -DatasetProfile lite
   .\demo.ps1 restore -DemoId jsmith01 -Mode prefix
+  .\demo.ps1 backup-timing -DemoId jsmith01 -TimingAction aws
+  .\demo.ps1 backup-timing -DemoId jsmith01 -TimingAction clumio -ClumioStart '2026-11-05T15:40:00-05:00' -ClumioEnd '2026-11-05T15:52:00-05:00' -Evidence clumio-backup.png
+  .\demo.ps1 backup-timing -DemoId jsmith01 -TimingAction report
   .\demo.ps1 report  -DemoId jsmith01 -ClumioStart 2026-11-05T17:10:00Z -ClumioEnd 2026-11-05T17:14:30Z
 #>
 param(
   [Parameter(Mandatory, Position = 0)]
-  [ValidateSet('up', 'check', 'seed', 'backup', 'incident', 'post', 'restore', 'copyback', 'verify', 'report', 'reset', 'cleanup', 'down')]
+  [ValidateSet('up', 'check', 'seed', 'backup', 'incident', 'post', 'restore', 'copyback', 'verify', 'report', 'backup-timing', 'reset', 'cleanup', 'down')]
   [string]$Command,
   [Parameter(Mandatory)][ValidatePattern('^[a-z0-9]{3,12}$')][string]$DemoId,
   [string]$AwsProfile,                       # AWS CLI / SSO profile (else AWS_PROFILE)
@@ -20,6 +23,10 @@ param(
   [ValidateSet('prefix', 'full')][string]$Source,   # copyback source bucket
   [string]$ClumioStart,
   [string]$ClumioEnd,
+  [ValidateSet('aws', 'aws-job', 'clumio', 'report')][string]$TimingAction,  # backup-timing subcommand
+  [string]$JobId,                            # backup-timing aws-job
+  [string]$Evidence,                         # backup-timing clumio: screenshot filename or note
+  [string]$TimingPrefixes = 'finance/,customers/',  # Clumio protected prefixes
   [switch]$Quick,
   [switch]$Deep,
   [switch]$Confirm
@@ -91,6 +98,24 @@ switch ($Command) {
   'report'   {
     $a = @(); if ($ClumioStart -and $ClumioEnd) { $a += @('--clumio-start', $ClumioStart, '--clumio-end', $ClumioEnd) }
     Run-Py 'report.py' $a
+  }
+  'backup-timing' {
+    if (-not $TimingAction) { throw '-TimingAction aws|aws-job|clumio|report is required.' }
+    $manifest = Join-Path $Root "manifests\$DemoId-baseline.csv"
+    $a = @($TimingAction)   # subcommand must come before --demo-id
+    switch ($TimingAction) {
+      'aws'     { $a += @('--env-dir', $EnvDir, '--manifest', $manifest) }
+      'aws-job' { if (-not $JobId) { throw '-JobId is required.' }; $a += @('--job-id', $JobId, '--manifest', $manifest) }
+      'clumio'  {
+        if (-not ($ClumioStart -and $ClumioEnd)) { throw '-ClumioStart and -ClumioEnd are required.' }
+        $a += @('--start', $ClumioStart, '--end', $ClumioEnd, '--prefixes', $TimingPrefixes, '--manifest', $manifest)
+        if ($Evidence) { $a += @('--evidence', $Evidence) }
+      }
+    }
+    $a += @('--demo-id', $DemoId)
+    if ($AwsProfile) { $a += @('--profile', $AwsProfile) }
+    & $Py (Join-Path $Root 'scripts\backup_timing.py') @a
+    if ($LASTEXITCODE) { throw "backup_timing.py exited with code $LASTEXITCODE" }
   }
   'reset'    { Need-Confirm; Run-Py 'reset_demo.py' @('--dataset-profile', $DatasetProfile, '--confirm') }
   'cleanup'  { Need-Confirm; Run-Py 'cleanup_recovery_points.py' @('--confirm') }
