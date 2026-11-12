@@ -57,6 +57,7 @@ $env:AWS_PROFILE = "my-sandbox"
 .\demo.ps1 clumio-up -DemoId jsmith01                         # needs CLUMIO_API_TOKEN / CLUMIO_API_BASE_URL
 .\demo.ps1 backup   -DemoId jsmith01
 .\demo.ps1 verify   -DemoId jsmith01 -Label baseline
+.\demo.ps1 search   -DemoId jsmith01 -Prefix finance/ -Label before   # AWS Backup Search (index enabled by `up`)
 .\demo.ps1 incident -DemoId jsmith01 -Confirm
 .\demo.ps1 post     -DemoId jsmith01
 .\demo.ps1 restore  -DemoId jsmith01 -Mode prefix
@@ -69,6 +70,13 @@ $env:AWS_PROFILE = "my-sandbox"
 
 `-AwsProfile` is the AWS profile; `-DatasetProfile` is `lite`/`full` (`profiles/*.json`). In the Python scripts
 `--profile` is the AWS profile and `--dataset-profile` the dataset size.
+
+## S3 backup indexing (AWS Backup Search)
+`up` runs `scripts/enable_index.py`, which sets `IndexActions: S3` on the plan through the AWS Backup API (idempotent;
+the Terraform provider's `aws_backup_plan` block was not verified to support it, so if your provider version has
+`index_actions`, move it into `modules/aws-backup-s3` and drop the script). On-demand jobs (`backup`) request an index
+explicitly because they ignore the plan. `search` runs a Backup Search job (`BEGINS_WITH` prefix or `CONTAINS` key) and
+records its duration in `results/`. Needs `backup-search:*` permissions and boto3 >= 1.36.
 
 ## Layout
 `envs/sandbox` (root stack, S3 backend with native lockfile, key `scenario-2/<demo_id>.tfstate`),

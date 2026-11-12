@@ -7,6 +7,7 @@
   .\demo.ps1 clumio-up     -DemoId jsmith01    # Clumio protection group + continuous backup policy (Terraform)
   .\demo.ps1 clumio-status -DemoId jsmith01    # what Terraform is tracking in Clumio
   .\demo.ps1 clumio-down   -DemoId jsmith01 -Confirm
+  .\demo.ps1 search  -DemoId jsmith01 -Prefix finance/ -Label before
   .\demo.ps1 restore -DemoId jsmith01 -Mode prefix
   .\demo.ps1 backup-timing -DemoId jsmith01 -TimingAction aws
   .\demo.ps1 backup-timing -DemoId jsmith01 -TimingAction clumio -ClumioStart '2026-11-05T15:40:00-05:00' -ClumioEnd '2026-11-05T15:52:00-05:00' -Evidence clumio-backup.png
@@ -15,7 +16,7 @@
 #>
 param(
   [Parameter(Mandatory, Position = 0)]
-  [ValidateSet('up', 'check', 'seed', 'backup', 'incident', 'post', 'restore', 'copyback', 'verify', 'report', 'backup-timing', 'reset', 'cleanup', 'down', 'clumio-up', 'clumio-status', 'clumio-down')]
+  [ValidateSet('up', 'check', 'seed', 'backup', 'index', 'search', 'incident', 'post', 'restore', 'copyback', 'verify', 'report', 'backup-timing', 'reset', 'cleanup', 'down', 'clumio-up', 'clumio-status', 'clumio-down')]
   [string]$Command,
   [Parameter(Mandatory)][ValidatePattern('^[a-z0-9]{3,12}$')][string]$DemoId,
   [string]$AwsProfile,                       # AWS CLI / SSO profile (else AWS_PROFILE)
@@ -31,6 +32,9 @@ param(
   [string]$Evidence,                         # backup-timing clumio: screenshot filename or note
   # Prefixes Clumio protects. Default matches envs/clumio (everything except the excluded app-logs/).
   [string]$TimingPrefixes = 'finance/,customers/,media/',
+  [double]$ClumioSearchSeconds = -1,         # report: Clumio search stopwatch seconds
+  [string]$Contains,                         # search: object key contains (e.g. RANSOM_NOTE.txt)
+  [string]$ResultName,                       # backup: result file name (use for post-incident backups)
   [switch]$Quick,
   [switch]$Deep,
   [switch]$Confirm
@@ -112,11 +116,18 @@ switch ($Command) {
     New-Item -ItemType Directory -Force $StateDir | Out-Null
     $outJson = (terraform "-chdir=$EnvDir" output -json) -join "`n"
     [System.IO.File]::WriteAllText((Join-Path $StateDir "$DemoId.outputs.json"), $outJson, (New-Object System.Text.UTF8Encoding($false)))
+    Run-Py 'enable_index.py' @()
     Run-Py 'check_vault_deletable.py' @()
   }
   'check'    { Run-Py 'check_vault_deletable.py' $(if ($Deep) { @('--deep') } else { @() }) }
   'seed'     { Run-Py 'seed_dataset.py' @('--dataset-profile', $DatasetProfile) }
-  'backup'   { Run-Py 'run_backup.py' @() }
+  'backup'   { Run-Py 'run_backup.py' $(if ($ResultName) { @('--result-name', $ResultName) } else { @() }) }
+  'index'    { Run-Py 'enable_index.py' @() }
+  'search'   {
+    $a = @('--label', $Label)
+    if ($Contains) { $a += @('--contains', $Contains) } else { $a += @('--prefix', $Prefix) }
+    Run-Py 'search_backup.py' $a
+  }
   'incident' { Need-Confirm; Run-Py 'simulate_incident.py' (@('--prefix', $Prefix, '--confirm')) }
   'post'     { Run-Py 'post_incident_writes.py' @() }
   'restore'  {
@@ -132,6 +143,7 @@ switch ($Command) {
   'verify'   { Run-Py 'verify_integrity.py' (@('--prefix', $Prefix, '--label', $Label) + $(if ($Quick) { @('--quick') } else { @() })) }
   'report'   {
     $a = @(); if ($ClumioStart -and $ClumioEnd) { $a += @('--clumio-start', $ClumioStart, '--clumio-end', $ClumioEnd) }
+    if ($ClumioSearchSeconds -ge 0) { $a += @('--clumio-search-seconds', $ClumioSearchSeconds) }
     Run-Py 'report.py' $a
   }
   'backup-timing' {

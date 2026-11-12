@@ -1,6 +1,8 @@
 """Build results/<demo_id>-results.md from recorded timings."""
 from __future__ import annotations
 
+import json
+
 from common import Ctx, base_parser, fmt_dur, load_manifest, log, parse_iso
 
 
@@ -17,6 +19,9 @@ def main() -> None:
     p = base_parser("Generate the timing table.")
     p.add_argument("--clumio-start", help="UTC ISO, e.g. 2026-11-05T17:10:00Z (from the Clumio UI)")
     p.add_argument("--clumio-end")
+    p.add_argument("--clumio-search-seconds", type=float,
+                   help="Stopwatch time in Clumio from submitting the search to results on screen")
+    p.add_argument("--clumio-search-query", default="RANSOM_NOTE.txt", help="What was searched in Clumio")
     ctx = Ctx(a := p.parse_args())
     base = load_manifest(ctx.manifest_path)
     seed = ctx.read_result("seed.json") or {}
@@ -51,6 +56,20 @@ def main() -> None:
         e2e = rt + cbt
         lines.append(f"| {name} | {scope} | {objs:,} | {size:,} | {fmt_dur(rt)} | {fmt_dur(cbt) if cbt else '-'} | "
                      f"{fmt_dur(e2e)} | {rate(objs, e2e)} | {verified(ctx, label)} |")
+    searches = sorted(ctx.result_path("x").parent.glob(f"{ctx.demo_id}-search-*.json"))
+    if searches or a.clumio_search_seconds is not None:
+        lines += ["", "## Search time (finding the affected data)", "",
+                  "| Method | Query | Matches | Time to results |", "|---|---|---|---|"]
+        for f in searches:
+            sr = json.loads(f.read_text(encoding="utf-8"))
+            q = f"key begins with {sr['prefix']}" if sr.get("prefix") else f"key contains {sr['contains']}"
+            lines.append(f"| AWS Backup Search job ({f.stem.split('-search-')[1]}) | {q} | "
+                         f"{sr['items_matched']:,} | {fmt_dur(sr['elapsed_s'])} (job start to results) |")
+        if a.clumio_search_seconds is not None:
+            lines.append(f"| Clumio search (UI) | {a.clumio_search_query} | n/a | "
+                         f"{fmt_dur(a.clumio_search_seconds)} (stopwatch, submit to results) |")
+        lines.append("")
+        lines.append("- AWS time excludes enabling the index and waiting for it to become ACTIVE; the Clumio time is a manual stopwatch.")
     inc = ctx.read_result("incident.json")
     bk = ctx.read_result("backup.json")
     lines += [""]
