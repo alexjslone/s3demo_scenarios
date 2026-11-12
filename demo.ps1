@@ -28,6 +28,7 @@ param(
   [string]$JobId,                            # backup-timing aws-job
   [string]$Evidence,                         # backup-timing clumio: screenshot filename or note
   [string]$TimingPrefixes = 'finance/,customers/',  # Clumio protected prefixes
+  [double]$ClumioSearchSeconds = -1,         # report: Clumio search stopwatch seconds
   [string]$Contains,                         # search: object key contains (e.g. RANSOM_NOTE.txt)
   [string]$ResultName,                       # backup: result file name (use for post-incident backups)
   [switch]$Quick,
@@ -107,6 +108,7 @@ switch ($Command) {
   'verify'   { Run-Py 'verify_integrity.py' (@('--prefix', $Prefix, '--label', $Label) + $(if ($Quick) { @('--quick') } else { @() })) }
   'report'   {
     $a = @(); if ($ClumioStart -and $ClumioEnd) { $a += @('--clumio-start', $ClumioStart, '--clumio-end', $ClumioEnd) }
+    if ($ClumioSearchSeconds -ge 0) { $a += @('--clumio-search-seconds', $ClumioSearchSeconds) }
     Run-Py 'report.py' $a
   }
   'backup-timing' {
