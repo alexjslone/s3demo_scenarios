@@ -4,6 +4,7 @@
 .EXAMPLE
   .\demo.ps1 up      -DemoId jsmith01
   .\demo.ps1 seed    -DemoId jsmith01 -DatasetProfile lite
+  .\demo.ps1 search  -DemoId jsmith01 -Prefix finance/ -Label before
   .\demo.ps1 restore -DemoId jsmith01 -Mode prefix
   .\demo.ps1 backup-timing -DemoId jsmith01 -TimingAction aws
   .\demo.ps1 backup-timing -DemoId jsmith01 -TimingAction clumio -ClumioStart '2026-11-05T15:40:00-05:00' -ClumioEnd '2026-11-05T15:52:00-05:00' -Evidence clumio-backup.png
@@ -12,7 +13,7 @@
 #>
 param(
   [Parameter(Mandatory, Position = 0)]
-  [ValidateSet('up', 'check', 'seed', 'backup', 'incident', 'post', 'restore', 'copyback', 'verify', 'report', 'backup-timing', 'reset', 'cleanup', 'down')]
+  [ValidateSet('up', 'check', 'seed', 'backup', 'index', 'search', 'incident', 'post', 'restore', 'copyback', 'verify', 'report', 'backup-timing', 'reset', 'cleanup', 'down')]
   [string]$Command,
   [Parameter(Mandatory)][ValidatePattern('^[a-z0-9]{3,12}$')][string]$DemoId,
   [string]$AwsProfile,                       # AWS CLI / SSO profile (else AWS_PROFILE)
@@ -27,6 +28,8 @@ param(
   [string]$JobId,                            # backup-timing aws-job
   [string]$Evidence,                         # backup-timing clumio: screenshot filename or note
   [string]$TimingPrefixes = 'finance/,customers/',  # Clumio protected prefixes
+  [string]$Contains,                         # search: object key contains (e.g. RANSOM_NOTE.txt)
+  [string]$ResultName,                       # backup: result file name (use for post-incident backups)
   [switch]$Quick,
   [switch]$Deep,
   [switch]$Confirm
@@ -77,11 +80,18 @@ switch ($Command) {
     New-Item -ItemType Directory -Force $StateDir | Out-Null
     $outJson = (terraform "-chdir=$EnvDir" output -json) -join "`n"
     [System.IO.File]::WriteAllText((Join-Path $StateDir "$DemoId.outputs.json"), $outJson, (New-Object System.Text.UTF8Encoding($false)))
+    Run-Py 'enable_index.py' @()
     Run-Py 'check_vault_deletable.py' @()
   }
   'check'    { Run-Py 'check_vault_deletable.py' $(if ($Deep) { @('--deep') } else { @() }) }
   'seed'     { Run-Py 'seed_dataset.py' @('--dataset-profile', $DatasetProfile) }
-  'backup'   { Run-Py 'run_backup.py' @() }
+  'backup'   { Run-Py 'run_backup.py' $(if ($ResultName) { @('--result-name', $ResultName) } else { @() }) }
+  'index'    { Run-Py 'enable_index.py' @() }
+  'search'   {
+    $a = @('--label', $Label)
+    if ($Contains) { $a += @('--contains', $Contains) } else { $a += @('--prefix', $Prefix) }
+    Run-Py 'search_backup.py' $a
+  }
   'incident' { Need-Confirm; Run-Py 'simulate_incident.py' (@('--prefix', $Prefix, '--confirm')) }
   'post'     { Run-Py 'post_incident_writes.py' @() }
   'restore'  {
