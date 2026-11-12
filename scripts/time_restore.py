@@ -53,7 +53,9 @@ def main() -> None:
 
     meta = {"DestinationBucketName": dest}
     if a.mode == "prefix":
-        meta["ItemsToRestore"] = json.dumps(a.prefixes)
+        # ItemsToRestore takes full S3 URIs (s3://bucket/key-or-prefix), not bare prefixes.
+        items = [p if p.startswith("s3://") else f"s3://{ctx.data_bucket}/{p}" for p in a.prefixes]
+        meta["ItemsToRestore"] = json.dumps(items)
     if a.restore_time:
         meta["RestoreTime"] = a.restore_time
     if a.versions != "latest":
