@@ -10,7 +10,7 @@ under `finance/` is replaced with nonsense bytes by remote S3 API calls and tagg
 ## Prep
 | When | Steps |
 |---|---|
-| Day before | `up`, `seed -DatasetProfile full`, `backup`, finish Clumio UI setup + first Clumio backup |
+| Day before | `up`, `seed -DatasetProfile full`, `backup`, `clumio-up`, confirm in the Clumio UI, first Clumio backup (`runbooks/clumio-ui-setup.md`) |
 | Hours before | Full rehearsal incl. all three AWS Backup restore modes; `report` to record timings; `reset -Confirm` |
 | Live | See below |
 | After | `reset -Confirm` or `down -Confirm` |
